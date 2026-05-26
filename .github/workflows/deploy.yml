@@ -25,6 +25,8 @@ jobs:
 
       - run: git config user.email "deploy@github" && git config user.name "GitHub Action"
 
-      - run: npm publish --access public
+      - run: |
+          echo "//registry.npmjs.com/:_authToken=${NODE_AUTH_TOKEN}" > ~/.npmrc
+          npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
