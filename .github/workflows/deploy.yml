@@ -25,6 +25,6 @@ jobs:
 
       - run: git config user.email "deploy@github" && git config user.name "GitHub Action"
 
-      - run: yarn npm publish
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
