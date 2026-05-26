@@ -1,8 +1,11 @@
-import { snakeCase } from "lodash";
-import { getBetweenBrackets } from "./helpers";
+import lodash from "lodash";
+import { getBetweenBrackets } from "./helpers.js";
+
+const { snakeCase } = lodash;
+
 export default class ExampleGenerator {
-  public schemas = {};
-  constructor(schemas: any) {
+  public schemas: Record<string, any> = {};
+  constructor(schemas: Record<string, any>) {
     this.schemas = schemas;
   }
 
@@ -89,7 +92,7 @@ export default class ExampleGenerator {
 
     const cleanedRef = rawRef.replace("[]", "");
 
-    let ex = {};
+    let ex: Record<string, any> = {};
     try {
       ex = Object.assign(
         this.getSchemaExampleBasedOnAnnotation(cleanedRef, inc, exc, only),

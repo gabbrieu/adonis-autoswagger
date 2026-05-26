@@ -1,39 +1,73 @@
-import YAML from "json-to-pretty-yaml";
-import fs from "fs";
-import path from "path";
-import util from "util";
-import HTTPStatusCode from "http-status-code";
-import _ from "lodash";
-import { isEmpty, isUndefined } from "lodash";
-import { existsSync } from "fs";
-import { scalarCustomCss } from "./scalarCustomCss";
-import { serializeV6Middleware, serializeV6Handler } from "./adonishelpers";
+import fs, { existsSync } from "node:fs";
+import { STATUS_CODES } from "node:http";
+import path from "node:path";
+import util from "node:util";
+import { pathToFileURL } from "node:url";
+import lodash from "lodash";
+import { stringify as stringifyYaml } from "yaml";
+import { serializeV6Handler, serializeV6Middleware } from "./adonishelpers.js";
 import {
+  EnumParser,
   InterfaceParser,
   ModelParser,
-  CommentParser,
   RouteParser,
   ValidatorParser,
-  EnumParser,
-} from "./parsers";
+} from "./parsers.js";
+import { getAutoSwaggerOptions } from "./decorators.js";
+import { scalarCustomCss } from "./scalarCustomCss.js";
 
-import type { options, AdonisRoutes, v6Handler, AdonisRoute } from "./types";
+import type { AdonisRoute, AdonisRoutes, options, v6Handler } from "./types.js";
+import type {
+  AutoSwaggerBody,
+  AutoSwaggerHeaderMap,
+  AutoSwaggerOptions,
+  AutoSwaggerParameterMap,
+  AutoSwaggerResponse,
+  AutoSwaggerResponseMap,
+  AutoSwaggerResponseValue,
+  AutoSwaggerSchema,
+  AutoSwaggerVineValidator,
+} from "./decorators.js";
 
-import { mergeParams, formatOperationId } from "./helpers";
-import ExampleGenerator, { ExampleInterfaces } from "./example";
-// @ts-expect-error moduleResolution:nodenext issue 54523
-import { VineValidator } from "@vinejs/vine";
+import ExampleGenerator, { ExampleInterfaces } from "./example.js";
+import { formatOperationId, mergeParams } from "./helpers.js";
 
-export class AutoSwagger {
+const { isEmpty, isUndefined } = lodash;
+
+function statusMessage(code: string | number): string {
+  return STATUS_CODES[String(code)] ?? String(code);
+}
+
+type OpenApiContent = Record<string, Record<string, unknown>>;
+type OpenApiRequestBody = { content: OpenApiContent };
+type OpenApiResponse = {
+  description?: string;
+  content?: OpenApiContent;
+  headers?: AutoSwaggerHeaderMap;
+};
+type DecoratorAnnotations = {
+  description: string;
+  hideControllerPath?: boolean;
+  responses: Record<string, OpenApiResponse>;
+  requestBody?: OpenApiRequestBody;
+  parameters: Record<string, unknown>;
+  summary: string;
+  operationId?: string;
+  tag: string;
+};
+
+const bodyWrapperKeys = ["body", "description", "headers"];
+
+export class AutoSwaggerGenerator {
   private options: options;
-  private schemas = {};
-  private commentParser: CommentParser;
+  private schemas: Record<string, any> = {};
+  private exampleGenerator: ExampleGenerator;
   private modelParser: ModelParser;
   private interfaceParser: InterfaceParser;
   private enumParser: EnumParser;
   private routeParser: RouteParser;
   private validatorParser: ValidatorParser;
-  private customPaths = {};
+  private customPaths: Record<string, any> = {};
 
   ui(url: string, options?: options) {
     const persistAuthString = options?.persistAuthorization
@@ -162,8 +196,8 @@ export class AutoSwagger {
     `;
   }
 
-  jsonToYaml(json: any) {
-    return YAML.stringify(json);
+  jsonToYaml(json: unknown): string {
+    return stringifyYaml(json);
   }
 
   async json(routes: any, options: options) {
@@ -230,7 +264,6 @@ export class AutoSwagger {
       console.error(e);
     }
 
-    this.commentParser = new CommentParser(this.options);
     this.routeParser = new RouteParser(this.options);
     this.modelParser = new ModelParser(this.options.snakeCase);
     this.interfaceParser = new InterfaceParser(this.options.snakeCase);
@@ -242,7 +275,7 @@ export class AutoSwagger {
       console.log("Found Schemas", Object.keys(this.schemas));
       console.log("Using custom paths", this.customPaths);
     }
-    this.commentParser.exampleGenerator = new ExampleGenerator(this.schemas);
+    this.exampleGenerator = new ExampleGenerator(this.schemas);
 
     const docs = {
       openapi: "3.0.0",
@@ -313,8 +346,8 @@ export class AutoSwagger {
     let globalTags = [];
 
     if (this.options.debug) {
-      console.log("Route annotations:");
-      console.log("Checking if controllers have propper comment annotations");
+      console.log("Route decorators:");
+      console.log("Checking if controllers have AutoSwagger decorators");
       console.log("-----");
     }
 
@@ -363,7 +396,7 @@ export class AutoSwagger {
         });
       });
 
-      const { sourceFile, action, customAnnotations, operationId } =
+      const { sourceFile, action, decoratorAnnotations, operationId } =
         await this.getDataBasedOnAdonisVersion(route);
 
       route.methods.forEach((method) => {
@@ -384,14 +417,14 @@ export class AutoSwagger {
 
         if (security.length > 0) {
           responses["401"] = {
-            description: `Returns **401** (${HTTPStatusCode.getMessage(401)})`,
+            description: `Returns **401** (${statusMessage(401)})`,
           };
           responses["403"] = {
-            description: `Returns **403** (${HTTPStatusCode.getMessage(403)})`,
+            description: `Returns **403** (${statusMessage(403)})`,
           };
         }
 
-        let requestBody = {
+        let requestBody: OpenApiRequestBody = {
           content: {
             "application/json": {},
           },
@@ -399,14 +432,17 @@ export class AutoSwagger {
 
         let actionParams = {};
 
-        if (action !== "" && typeof customAnnotations[action] !== "undefined") {
-          description = customAnnotations[action].description;
-          summary = customAnnotations[action].summary;
-          operationId = customAnnotations[action].operationId;
-          responses = { ...responses, ...customAnnotations[action].responses };
-          requestBody = customAnnotations[action].requestBody;
-          actionParams = customAnnotations[action].parameters;
-          tag = customAnnotations[action].tag;
+        if (
+          action !== "" &&
+          decoratorAnnotations
+        ) {
+          description = decoratorAnnotations.description;
+          summary = decoratorAnnotations.summary;
+          operationId = decoratorAnnotations.operationId;
+          responses = { ...responses, ...decoratorAnnotations.responses };
+          requestBody = decoratorAnnotations.requestBody ?? requestBody;
+          actionParams = decoratorAnnotations.parameters;
+          tag = decoratorAnnotations.tag;
         }
         parameters = mergeParams(parameters, actionParams);
 
@@ -420,7 +456,7 @@ export class AutoSwagger {
 
         if (isEmpty(responses)) {
           responses[responseCodes[method]] = {
-            description: HTTPStatusCode.getMessage(responseCodes[method]),
+            description: statusMessage(responseCodes[method]),
             content: {
               "application/json": {},
             },
@@ -475,11 +511,16 @@ export class AutoSwagger {
           }
         }
 
-        const sf = sourceFile.split("/").at(-1).replace(".ts", "");
+        const showControllerPath =
+          decoratorAnnotations?.hideControllerPath === false ||
+          (decoratorAnnotations?.hideControllerPath !== true &&
+            this.options.showFullPath === true);
+        const controllerDescription = showControllerPath
+          ? "\n\n _" + sourceFile + "_ - **" + action + "**"
+          : "";
         let m = {
           summary: `${summary}${action !== "" ? ` (${action})` : "route"}`,
-          description:
-            description + "\n\n _" + sourceFile + "_ - **" + action + "**",
+          description: description + controllerDescription,
           operationId: operationId,
           parameters: parameters,
           tags: tags,
@@ -504,7 +545,7 @@ export class AutoSwagger {
     }
 
     // filter unused tags
-    const usedTags = _.uniq(
+    const usedTags = lodash.uniq(
       Object.entries(paths)
         .map(([p, val]) => Object.entries(val)[0][1].tags)
         .flat()
@@ -518,7 +559,7 @@ export class AutoSwagger {
   private async getDataBasedOnAdonisVersion(route: AdonisRoute) {
     let sourceFile = "";
     let action = "";
-    let customAnnotations;
+    let decoratorAnnotations: DecoratorAnnotations | undefined;
     let operationId = "";
     if (
       route.meta.resolvedHandler !== null &&
@@ -562,9 +603,12 @@ export class AutoSwagger {
       } else {
         // handles lazy import
         // const TestController = () => import('#controllers/test_controller')
-        v6handler = await serializeV6Handler(v6handler);
-        action = v6handler.method;
-        sourceFile = v6handler.moduleNameOrPath;
+        const serializedHandler = await serializeV6Handler(v6handler);
+        if (serializedHandler.type !== "controller") {
+          return { sourceFile, action, decoratorAnnotations, operationId };
+        }
+        action = serializedHandler.method;
+        sourceFile = serializedHandler.moduleNameOrPath;
         operationId = formatOperationId(sourceFile + "." + action);
         const split = sourceFile.split("/");
         if (split[0].includes("#")) {
@@ -582,23 +626,23 @@ export class AutoSwagger {
       sourceFile = sourceFile.replace("App/", "app/") + ".ts";
       sourceFile = sourceFile.replace(".js", "");
 
-      customAnnotations = await this.commentParser.getAnnotations(
+      decoratorAnnotations = await this.getDecoratorAnnotations(
         sourceFile,
         action
       );
     }
     if (
-      typeof customAnnotations !== "undefined" &&
-      typeof customAnnotations.operationId !== "undefined" &&
-      customAnnotations.operationId !== ""
+      typeof decoratorAnnotations !== "undefined" &&
+      typeof decoratorAnnotations.operationId !== "undefined" &&
+      decoratorAnnotations.operationId !== ""
     ) {
-      operationId = customAnnotations.operationId;
+      operationId = decoratorAnnotations.operationId;
     }
     if (this.options.debug) {
       if (sourceFile !== "") {
         console.log(
-          typeof customAnnotations !== "undefined" &&
-            !_.isEmpty(customAnnotations)
+          typeof decoratorAnnotations !== "undefined" &&
+            !lodash.isEmpty(decoratorAnnotations)
             ? `\x1b[32m✓ FOUND for ${action}\x1b[0m`
             : `\x1b[33m✗ MISSING for ${action}\x1b[0m`,
 
@@ -606,7 +650,497 @@ export class AutoSwagger {
         );
       }
     }
-    return { sourceFile, action, customAnnotations, operationId };
+    return { sourceFile, action, decoratorAnnotations, operationId };
+  }
+
+  private async getDecoratorAnnotations(
+    sourceFile: string,
+    action: string
+  ): Promise<DecoratorAnnotations | undefined> {
+    const controller = await this.importController(sourceFile, action);
+    const decoratorOptions = getAutoSwaggerOptions(controller, action);
+    if (!decoratorOptions) {
+      return undefined;
+    }
+    return this.toDecoratorAnnotations(decoratorOptions);
+  }
+
+  private async importController(
+    sourceFile: string,
+    action: string
+  ): Promise<Function | undefined> {
+    try {
+      const controllerPath = path.isAbsolute(sourceFile)
+        ? sourceFile
+        : path.join(this.options.path, sourceFile);
+      const controllerModule = await import(pathToFileURL(controllerPath).href);
+
+      if (
+        typeof controllerModule.default === "function" &&
+        typeof controllerModule.default.prototype?.[action] === "function"
+      ) {
+        return controllerModule.default;
+      }
+
+      for (const exported of Object.values(controllerModule)) {
+        if (
+          typeof exported === "function" &&
+          typeof exported.prototype?.[action] === "function"
+        ) {
+          return exported;
+        }
+      }
+    } catch (e) {
+      console.error("\x1b[31m✗ Controller import failed\x1b[0m", sourceFile);
+      console.error(e.message);
+    }
+
+    return undefined;
+  }
+
+  private async toDecoratorAnnotations(
+    options: AutoSwaggerOptions
+  ): Promise<DecoratorAnnotations> {
+    const responses = await this.toResponses(options.responseBody);
+    const headersByStatus = this.resolveResponseHeaderUses(
+      options.responseHeaderUse
+    );
+
+    for (const [status, headers] of Object.entries(headersByStatus)) {
+      responses[status] = {
+        ...responses[status],
+        headers: {
+          ...responses[status]?.headers,
+          ...headers,
+        },
+      };
+      if (!responses[status].description) {
+        responses[status].description = `Returns **${status}** (${statusMessage(status)})`;
+      }
+    }
+
+    return {
+      description: options.description ?? "",
+      hideControllerPath: options.hideControllerPath,
+      responses,
+      requestBody: await this.toRequestBody(
+        options.requestFormDataBody ?? options.requestBody,
+        options.requestFormDataBody ? "multipart/form-data" : "application/json"
+      ),
+      parameters: this.toParameters(options),
+      summary: options.summary ?? "",
+      operationId: options.operationId,
+      tag: options.tag ?? "",
+    };
+  }
+
+  private async toResponses(
+    responseBody?: AutoSwaggerResponseMap
+  ): Promise<Record<string, OpenApiResponse>> {
+    const responses: Record<string, OpenApiResponse> = {};
+    if (!responseBody) {
+      return responses;
+    }
+
+    for (const [status, responseValue] of Object.entries(responseBody)) {
+      const response = this.normalizeResponse(responseValue);
+      const bodyContent = await this.toContent(response.body, "application/json");
+      responses[status] = {
+        ...(bodyContent ? { content: bodyContent } : {}),
+        ...(response.description ? { description: response.description } : {}),
+        ...(response.headers ? { headers: response.headers } : {}),
+      };
+
+      if (!responses[status].description) {
+        responses[status].description = bodyContent
+          ? `Returns **${status}** (${statusMessage(status)}) as **${Object.keys(bodyContent)[0]}**`
+          : `Returns **${status}** (${statusMessage(status)})`;
+      }
+    }
+
+    return responses;
+  }
+
+  private normalizeResponse(
+    responseValue: AutoSwaggerResponseValue
+  ): AutoSwaggerResponse {
+    if (
+      this.isPlainObject(responseValue) &&
+      Object.keys(responseValue).some((key) => bodyWrapperKeys.includes(key))
+    ) {
+      return responseValue as AutoSwaggerResponse;
+    }
+
+    return { body: responseValue as AutoSwaggerBody };
+  }
+
+  private async toRequestBody(
+    body: AutoSwaggerBody | undefined,
+    mediaType: string
+  ): Promise<OpenApiRequestBody | undefined> {
+    if (mediaType === "multipart/form-data") {
+      return this.toFormDataRequestBody(body);
+    }
+
+    const content = await this.toContent(body, mediaType);
+    return content ? { content } : undefined;
+  }
+
+  private async toFormDataRequestBody(
+    body: AutoSwaggerBody | undefined
+  ): Promise<OpenApiRequestBody | undefined> {
+    if (typeof body === "undefined") {
+      return undefined;
+    }
+
+    const schema = await this.toFormDataSchema(body);
+    return {
+      content: {
+        "multipart/form-data": {
+          schema,
+        },
+      },
+    };
+  }
+
+  private async toFormDataSchema(body: AutoSwaggerBody): Promise<AutoSwaggerSchema> {
+    if (this.isVineValidator(body)) {
+      const schema = await this.validatorParser.validatorToObject(body);
+      return {
+        type: "object",
+        properties: schema.properties,
+      };
+    }
+
+    if (typeof body === "string" && body.includes("<") && body.includes(">")) {
+      const rawRef = body.substring(body.indexOf("<") + 1, body.lastIndexOf(">"));
+      const cleanedRef = rawRef.replace("[]", "");
+      const schema = this.schemas[cleanedRef];
+      if (!schema?.properties) {
+        return { type: "object", properties: {} };
+      }
+
+      const example = this.exampleGenerator.parseRef(body, true);
+      const exampleObject = Array.isArray(example) ? example[0] : example;
+      const properties = Object.entries(schema.properties).reduce<
+        Record<string, AutoSwaggerSchema>
+      >((result, [key, value]) => {
+        if (
+          this.isPlainObject(exampleObject) &&
+          typeof exampleObject[key] === "undefined"
+        ) {
+          return result;
+        }
+
+        result[key] = this.isPlainObject(value)
+          ? (value as AutoSwaggerSchema)
+          : this.toSchema(value as AutoSwaggerBody);
+        return result;
+      }, {});
+
+      return {
+        type: "object",
+        properties,
+        ...(Array.isArray(schema.required) ? { required: schema.required } : {}),
+      };
+    }
+
+    return this.toSchema(body);
+  }
+
+  private async toContent(
+    body: AutoSwaggerBody | undefined,
+    mediaType: string
+  ): Promise<OpenApiContent | undefined> {
+    if (typeof body === "undefined") {
+      return undefined;
+    }
+
+    const parsedReference = await this.toReferenceContent(body);
+    if (parsedReference) {
+      return parsedReference;
+    }
+
+    const schema = this.toSchema(body);
+    const example = this.toExample(body);
+    return {
+      [mediaType]: {
+        schema,
+        example,
+      },
+    };
+  }
+
+  private async toReferenceContent(
+    body: AutoSwaggerBody
+  ): Promise<OpenApiContent | undefined> {
+    if (typeof body === "string") {
+      if (body.includes("<") && body.includes(">")) {
+        return (this.exampleGenerator.parseRef(body) as { content: OpenApiContent }).content;
+      }
+      return undefined;
+    }
+
+    if (this.isVineValidator(body)) {
+      const schema = await this.validatorParser.validatorToObject(body);
+      return {
+        "application/json": {
+          schema,
+          example: schema.example,
+        },
+      };
+    }
+
+    const schemaName = this.getSchemaName(body);
+    if (schemaName && this.schemas[schemaName]) {
+      return (this.exampleGenerator.parseRef(`<${schemaName}>`) as { content: OpenApiContent }).content;
+    }
+
+    return undefined;
+  }
+
+  private toSchema(body: AutoSwaggerBody): AutoSwaggerSchema {
+    if (Array.isArray(body)) {
+      return {
+        type: "array",
+        items: body.length > 0 ? this.toSchema(body[0]) : { type: "string" },
+      };
+    }
+
+    if (this.isPlainObject(body) && this.isOpenApiSchema(body)) {
+      return body as AutoSwaggerSchema;
+    }
+
+    if (this.isPlainObject(body)) {
+      const required: string[] = [];
+      const properties: Record<string, AutoSwaggerSchema> = {};
+
+      for (const [key, value] of Object.entries(body)) {
+        const schema = this.toSchema(value as AutoSwaggerBody);
+        if (schema.required === true) {
+          required.push(key);
+          delete schema.required;
+        }
+        properties[key] = schema;
+      }
+
+      return {
+        type: "object",
+        properties,
+        ...(required.length > 0 ? { required } : {}),
+      };
+    }
+
+    if (typeof body === "string") {
+      if (this.isKnownType(body)) {
+        return this.schemaByType(body);
+      }
+      return { type: "string", example: body };
+    }
+
+    if (typeof body === "number") {
+      return { type: Number.isInteger(body) ? "integer" : "number", example: body };
+    }
+
+    if (typeof body === "boolean") {
+      return { type: "boolean", example: body };
+    }
+
+    return { $ref: "#/components/schemas/Any" };
+  }
+
+  private toExample(body: AutoSwaggerBody): unknown {
+    if (Array.isArray(body)) {
+      return body.map((item) => this.toExample(item as AutoSwaggerBody));
+    }
+
+    if (typeof body === "string") {
+      if (body.includes("<") && body.includes(">")) {
+        return this.exampleGenerator.parseRef(body, true);
+      }
+      if (this.isKnownType(body)) {
+        return this.exampleGenerator.exampleByType(body) ?? body;
+      }
+      return body;
+    }
+
+    if (this.isPlainObject(body)) {
+      if (this.isOpenApiSchema(body)) {
+        const schema = body as AutoSwaggerSchema;
+        return schema.example ?? this.exampleGenerator.exampleByType(schema.type);
+      }
+
+      return Object.entries(body).reduce<Record<string, unknown>>(
+        (result, [key, value]) => {
+          result[key] = this.toExample(value as AutoSwaggerBody);
+          return result;
+        },
+        {}
+      );
+    }
+
+    return body;
+  }
+
+  private toParameters(options: AutoSwaggerOptions): Record<string, unknown> {
+    return {
+      ...this.toCommonParameters(options.paramUse),
+      ...this.toParameterLocation("path", options.paramPath),
+      ...this.toParameterLocation("query", options.paramQuery),
+      ...this.toParameterLocation("header", options.paramHeader),
+      ...this.toParameterLocation("cookie", options.paramCookie),
+    };
+  }
+
+  private toCommonParameters(names: string[] = []): Record<string, unknown> {
+    return names.reduce<Record<string, unknown>>((parameters, name) => {
+      const common = this.options.common.parameters[name];
+      if (!Array.isArray(common)) {
+        return parameters;
+      }
+
+      common.forEach((parameter) => {
+        if (parameter?.name) {
+          parameters[parameter.name] = parameter;
+        }
+      });
+      return parameters;
+    }, {});
+  }
+
+  private toParameterLocation(
+    location: string,
+    parameterMap?: AutoSwaggerParameterMap
+  ): Record<string, unknown> {
+    if (!parameterMap) {
+      return {};
+    }
+
+    return Object.entries(parameterMap).reduce<Record<string, unknown>>(
+      (parameters, [name, parameter]) => {
+        parameters[name] = {
+          in: location,
+          name,
+          description: parameter.description ?? "",
+          schema: parameter.schema ?? {
+            type: parameter.type ?? "string",
+            example:
+              parameter.example ??
+              this.exampleGenerator.exampleByType(parameter.type ?? "string"),
+            ...(parameter.enum ? { enum: parameter.enum } : {}),
+          },
+          required:
+            parameter.required ??
+            (location === "path" ? true : false),
+        };
+        return parameters;
+      },
+      {}
+    );
+  }
+
+  private resolveResponseHeaderUses(
+    responseHeaderUse: AutoSwaggerOptions["responseHeaderUse"]
+  ): Record<string, AutoSwaggerHeaderMap> {
+    const headersByStatus: Record<string, AutoSwaggerHeaderMap> = {};
+    if (!responseHeaderUse) {
+      return headersByStatus;
+    }
+
+    for (const [status, headerNames] of Object.entries(responseHeaderUse)) {
+      headersByStatus[status] = headerNames.reduce<AutoSwaggerHeaderMap>(
+        (headers, name) => ({
+          ...headers,
+          ...this.options.common.headers[name],
+        }),
+        {}
+      );
+    }
+
+    return headersByStatus;
+  }
+
+  private getSchemaName(body: AutoSwaggerBody): string | undefined {
+    if (typeof body === "function") {
+      return body.name;
+    }
+
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      !Array.isArray(body) &&
+      !this.isPlainObject(body) &&
+      "name" in body &&
+      typeof body.name === "string"
+    ) {
+      return body.name;
+    }
+
+    return undefined;
+  }
+
+  private isKnownType(type: string): boolean {
+    return [
+      "string",
+      "number",
+      "integer",
+      "datetime",
+      "date",
+      "boolean",
+      "object",
+      "array",
+      "any",
+    ].includes(type);
+  }
+
+  private schemaByType(type: string): AutoSwaggerSchema {
+    if (type === "datetime") {
+      return {
+        type: "string",
+        format: "date-time",
+        example: this.exampleGenerator.exampleByType(type),
+      };
+    }
+
+    if (type === "date") {
+      return {
+        type: "string",
+        format: "date",
+        example: this.exampleGenerator.exampleByType(type),
+      };
+    }
+
+    if (type === "any") {
+      return { $ref: "#/components/schemas/Any" };
+    }
+
+    return {
+      type,
+      example: this.exampleGenerator.exampleByType(type),
+    };
+  }
+
+  private isOpenApiSchema(value: Record<string, unknown>): boolean {
+    return ["type", "$ref", "properties", "items", "oneOf", "anyOf", "allOf"].some(
+      (key) => key in value
+    );
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return false;
+    }
+    return Object.getPrototypeOf(value) === Object.prototype;
+  }
+
+  private isVineValidator(value: unknown): value is AutoSwaggerVineValidator {
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { toJSON?: unknown }).toJSON === "function" &&
+      typeof (value as { tryValidate?: unknown }).tryValidate === "function" &&
+      value.constructor.name.includes("VineValidator")
+    );
   }
 
   private async getSchemas() {
@@ -660,7 +1194,7 @@ export class AutoSwagger {
         for (const [key, value] of Object.entries(val)) {
           if (value.constructor.name.includes("VineValidator")) {
             validators[key] = await this.validatorParser.validatorToObject(
-              value as VineValidator<any, any>
+              value as AutoSwaggerVineValidator
             );
             validators[key].description = key + " (Validator)";
           }
@@ -803,7 +1337,6 @@ export class AutoSwagger {
   }
 
   private async getFiles(dir, files_) {
-    const fs = require("fs");
     files_ = files_ || [];
     var files = await fs.readdirSync(dir);
     for (let i in files) {

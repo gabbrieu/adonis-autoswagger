@@ -1,7 +1,9 @@
 /**
  * Check if a string is a valid JSON
  */
-import { camelCase, isEmpty, isUndefined, snakeCase, startCase } from "lodash";
+import lodash from "lodash";
+
+const { camelCase, startCase } = lodash;
 export function isJSONString(str: string): boolean {
   try {
     JSON.parse(str);
@@ -11,7 +13,7 @@ export function isJSONString(str: string): boolean {
   }
 }
 
-export function getBetweenBrackets(value: string, start: string) {
+export function getBetweenBrackets(value: string, start: string): string {
   let match = value.match(new RegExp(start + "\\(([^()]*)\\)", "g"));
 
   if (match !== null) {
@@ -29,10 +31,13 @@ export function getBetweenBrackets(value: string, start: string) {
   return "";
 }
 
-export function mergeParams(initial, custom) {
-  let merge = Object.assign(initial, custom);
-  let params = [];
-  for (const [key, value] of Object.entries(merge)) {
+export function mergeParams(
+  initial: Record<string, unknown>,
+  custom: Record<string, unknown>
+): unknown[] {
+  const merge = Object.assign(initial, custom);
+  const params: unknown[] = [];
+  for (const [, value] of Object.entries(merge)) {
     params.push(value);
   }
 

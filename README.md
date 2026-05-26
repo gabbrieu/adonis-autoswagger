@@ -25,7 +25,7 @@ pnpm i adonis-autoswagger #using pnpm
 - Creates **schemas** automatically based on `app/Interfaces/*`
 - Creates **schemas** automatically based on `app/Validators/*` (only for adonisJS v6)
 - Creates **schemas** automatically based on `app/Types/*` (only for adonisJS v6)
-- **Rich configuration** via comments
+- **Rich configuration** via decorators
 - Works also in **production** mode
 - `node ace docs:generate` command
 
@@ -67,7 +67,7 @@ export default {
   authMiddlewares: ["auth", "auth:api"], // optional
   defaultSecurityScheme: "BearerAuth", // optional
   persistAuthorization: true, // persist authorization between reloads on the swagger page
-  showFullPath: false, // the path displayed after endpoint summary
+  showFullPath: false, // show the controller path after endpoint description
 };
 ```
 
@@ -219,129 +219,109 @@ Sometimes you want to use specific parameters or headers on multiple responses.
 
 _Example:_ Some resources use the same filter parameters or return the same headers.
 
-Here's where you can set these and use them with `@paramUse()` and `@responseHeader() @use()`. See practical example for further details.
+Here's where you can set these and use them with `paramUse` and `responseHeaderUse`. See practical example for further details.
 
 ---
 
 # 💫 Extend Controllers
 
-## Add additional documentation to your Controller-files
+## Add additional documentation to your Controller methods
 
-**@summary** (only one)
-A summary of what the action does
+Import the method decorator and place it directly above the controller method.
 
-**@tag** (only one)
-Set a custom tag for this action
+```ts
+import { AutoSwagger } from 'adonis-autoswagger'
+```
 
-**@description** (only one)
+**summary**
+A summary of what the action does.
+
+**tag**
+Set a custom tag for this action.
+
+**description**
 A detailed description of what the action does.
 
-**@operationId** (only one)
-An optional unique string used to identify an operation. If provided, these IDs must be unique among all operations described in your API..
+**hideControllerPath**
+Hides the generated controller file path and action from the operation description. Defaults to `true`. Set it to `false` on a route to show the path for that action.
 
-**@responseBody** (multiple)
+**operationId**
+An optional unique string used to identify an operation. If provided, these IDs must be unique among all operations described in your API.
 
-Format: `<status> - <return> - <description>`
+**responseBody**
+A map keyed by HTTP status. Values can be a schema reference string, a class/model value, a validator, a custom object, or a wrapper with `body`, `description`, and `headers`.
 
-`<return>` can be either a `<Schema>`, `<Schema[]>/` or a custom JSON `{}`
+**responseHeaderUse**
+A map keyed by HTTP status with names from `config/swagger.ts` `common.headers`.
 
-**@responseHeader** (multiple)
+**paramPath**, **paramQuery**, **paramHeader**, **paramCookie**
+Parameter maps keyed by parameter name. Each parameter accepts `description`, `type`, `required`, `example`, `enum`, or a full `schema`.
 
-Format: `<status> - <name> - <description> - <meta>`
+**paramUse**
+An array of names from `config/swagger.ts` `common.parameters`.
 
-**@param`Type`** (multiple)
+**requestBody**
+A definition of the expected request body. It can be a validator, a schema reference string like `'<Model>'`, a class/model value, or a custom object.
 
-`Type` can be one of [Parameter Types](https://swagger.io/docs/specification/describing-parameters/) (first letter in uppercase)
-
-**@requestBody** (only one)
-A definition of the expected requestBody
-
-Format: `<body>`
-
-`<body>` can be either a `<Schema>`, `<Schema[]>/`, or a custom JSON `{}`
-
-**@requestFormDataBody** (only one)
-A definition of the expected requestBody that will be sent with formData format.
-
-**Schema**
-A model or a validator.
-Format: `<Schema>`
-
-**Custom format**
-
-Format: `{"fieldname": {"type":"string", "format": "email"}}`
-This format should be a valid openapi 3.x json.
+**requestFormDataBody**
+A definition of the expected request body using `multipart/form-data`.
 
 ---
 
 # 🤘Examples
 
-## `@responseBody` examples
+## Decorator examples
 
 ```ts
-@responseBody <status> - Lorem ipsum Dolor sit amet
-
-@responseBody <status> // returns standard <status> message
-
-@responseBody <status> - <Model> // returns model specification
-
-@responseBody <status> - <Model[]> // returns model-array specification
-
-@responseBody <status> - <Model>.with(relations, property1, property2.relations, property3.subproperty.relations) // returns a model and a defined relation
-
-@responseBody <status> - <Model[]>.with(relations).exclude(property1, property2, property3.subproperty) // returns model specification
-
-@responseBody <status> - <Model[]>.append("some":"valid json") // append additional properties to a Model
-
-@responseBody <status> - <Model[]>.paginated() // helper function to return adonisJS conform structure like {"data": [], "meta": {}}
-
-@responseBody <status> - <Model[]>.paginated(dataName, metaName) // returns a paginated model with custom keys for the data array and meta object, use `.paginated(dataName)` or `.paginated(,metaName)` if you want to override only one. Don't forget the ',' for the second parameter.
-
-@responseBody <status> - <Model>.only(property1, property2) // pick only specific properties
-
-@requestBody <status> <myCustomValidator> // returns a validator object
-
-@responseBody <status> - {"foo": "bar", "baz": "<Model>"} //returns custom json object and also parses the model
-@responseBody <status> - ["foo", "bar"] //returns custom json array
+@AutoSwagger({
+  responseBody: {
+    200: '<Product[]>.with(relations)',
+    404: {
+      description: 'Product could not be found',
+    },
+  },
+  responseHeaderUse: {
+    200: ['paginated'],
+  },
+  paramPath: {
+    id: {
+      description: 'The ID of the source',
+      type: 'number',
+      required: true,
+    },
+  },
+  paramQuery: {
+    page: {
+      description: 'The page number',
+      type: 'number',
+    },
+  },
+  requestBody: '<Product>',
+  hideControllerPath: false,
+})
 ```
 
-## `@paramPath` and `@paramQuery` examples
+Reference strings still support `.with()`, `.exclude()`, `.append()`, `.paginated()`, `.only()`, and array refs like `'<Product[]>'`.
 
 ```ts
-// basicaly same as @response, just without a status
-@paramPath <paramName> - Description - (meta)
-@paramQuery <paramName> - Description - (meta)
-
-@paramPath id - The ID of the source - @type(number) @required
-@paramPath slug - The ID of the source - @type(string)
-
-@paramQuery q - Search term - @type(string) @required
-@paramQuery page - the Page number - @type(number)
-
-```
-
-## `@requestBody` examples
-
-```ts
-// basicaly same as @response, just without a status
-@requestBody <Model> // Expects model specification
-@requestBody <myCustomValidator> // Expects validator specification
-@requestBody <Model>.with(relations) // Expects model and its relations
-@requestBody <Model[]>.append("some":"valid json") // append additional properties to a Model
-@requestBody {"foo": "bar"} // Expects a specific JSON
-```
-
-## `@requestFormDataBody` examples
-
-```ts
-// Providing a raw JSON
-@requestFormDataBody {"name":{"type":"string"},"picture":{"type":"string","format":"binary"}} // Expects a valid OpenAPI 3.x JSON
-```
-
-```ts
-// Providing a Model, and adding additional fields
-@requestFormDataBody <Model> // Expects a valid OpenAPI 3.x JSON
-@requestFormDataBody <Model>.exclude(property1).append("picture":{"type":"string","format":"binary"}) // Expects a valid OpenAPI 3.x JSON
+@AutoSwagger({
+  requestFormDataBody: {
+    name: { type: 'string' },
+    picture: { type: 'string', format: 'binary' },
+  },
+  responseBody: {
+    200: {
+      body: { token: 'string' },
+      description: 'Authenticated',
+      headers: {
+        'X-Request-Id': {
+          description: 'Request identifier',
+          schema: { type: 'string', example: 'req_123' },
+        },
+      },
+    },
+  },
+})
 ```
 
 ---
@@ -395,43 +375,72 @@ export default {
 `app/Controllers/Http/SomeController.ts`
 
 ```ts
+import { AutoSwagger } from 'adonis-autoswagger'
+import { createProductValidator, updateProductValidator } from '#validators/product'
+
 export default class SomeController {
-  /**
-   * @index
-   * @operationId getProducts
-   * @description Returns array of producs and it's relations
-   * @responseBody 200 - <Product[]>.with(relations)
-   * @paramUse(sortable, filterable)
-   * @responseHeader 200 - @use(paginated)
-   * @responseHeader 200 - X-pages - A description of the header - @example(test)
-   */
+  @AutoSwagger({
+    operationId: 'getProducts',
+    description: "Returns array of products and its relations",
+    responseBody: {
+      200: '<Product[]>.with(relations)',
+    },
+    paramUse: ['sortable', 'filterable'],
+    responseHeaderUse: {
+      200: ['paginated'],
+    },
+  })
   public async index({ request, response }: HttpContextContract) {}
 
-  /**
-   * @show
-   * @paramPath id - Describe the path param - @type(string) @required
-   * @paramQuery foo - Describe the query param - @type(string) @required
-   * @description Returns a product with it's relation on user and user relations
-   * @responseBody 200 - <Product>.with(user, user.relations)
-   * @responseBody 404
-   */
+  @AutoSwagger({
+    description: 'Returns a product with its relation on user and user relations',
+    paramPath: {
+      id: {
+        description: 'Describe the path param',
+        type: 'string',
+        required: true,
+      },
+    },
+    paramQuery: {
+      foo: {
+        description: 'Describe the query param',
+        type: 'string',
+        required: true,
+      },
+    },
+    responseBody: {
+      200: '<Product>.with(user, user.relations)',
+      404: {
+        description: 'Product could not be found',
+      },
+    },
+  })
   public async show({ request, response }: HttpContextContract) {}
 
-  /**
-   * @update
-   * @responseBody 200
-   * @responseBody 404 - Product could not be found
-   * @requestBody <Product>
-   */
+  @AutoSwagger({
+    requestBody: updateProductValidator,
+    responseBody: {
+      200: '<Product>',
+      404: {
+        description: 'Product could not be found',
+      },
+    },
+  })
   public async update({ request, response }: HttpContextContract) {}
 
-  /**
-   * @myCustomFunction
-   * @summary Lorem ipsum dolor sit amet
-   * @paramPath provider - The login provider to be used - @enum(google, facebook, apple)
-   * @responseBody 200 - {"token": "xxxxxxx"}
-   * @requestBody {"code": "xxxxxx"}
-   */
+  @AutoSwagger({
+    summary: 'Lorem ipsum dolor sit amet',
+    paramPath: {
+      provider: {
+        description: 'The login provider to be used',
+        enum: ['google', 'facebook', 'apple'],
+      },
+    },
+    responseBody: {
+      200: { token: 'string' },
+    },
+    requestBody: createProductValidator,
+  })
   public async myCustomFunction({ request, response }: HttpContextContract) {}
 }
 ```
@@ -450,7 +459,7 @@ Automatically generates swagger path-descriptions, based on your application rou
 
 ### Responses and RequestBody
 
-Generates responses and requestBody based on your simple Controller-Annotation (see Examples)
+Generates responses and requestBody based on your controller decorators (see Examples)
 
 ---
 
@@ -474,7 +483,11 @@ If you want to add enum on ExampleValue, you can use `.append(enumFieldExample)`
 Example:
 
 ```ts
- @responseBody 200 - <Model>.with(relations).append(enumFieldExample)
+@AutoSwagger({
+  responseBody: {
+    200: '<Model>.with(relations).append(enumFieldExample)',
+  },
+})
 ```
 
 ## Extend Models

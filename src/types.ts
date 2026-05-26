@@ -12,6 +12,7 @@ export interface options {
   snakeCase: boolean;
   common: common;
   fileNameInSummary?: boolean;
+  showFullPath?: boolean;
   preferredPutPatch?: string;
   persistAuthorization?: boolean;
   appPath?: string;

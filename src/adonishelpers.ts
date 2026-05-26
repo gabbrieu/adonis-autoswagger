@@ -1,4 +1,14 @@
-export function serializeV6Middleware(mw: any): string[] {
+type MiddlewareEntry = Function | { name?: string };
+type MiddlewareCollection = { all(): Iterable<MiddlewareEntry> };
+
+type BindingReference = string | (() => unknown);
+type BindingTuple = [BindingReference, string?];
+
+type V6HandlerLike =
+  | { reference: string | BindingTuple; name?: string }
+  | { name?: string };
+
+export function serializeV6Middleware(mw: MiddlewareCollection): string[] {
   return [...mw.all()].reduce<string[]>((result, one) => {
     if (typeof one === "function") {
       result.push(one.name || "closure");
@@ -13,7 +23,12 @@ export function serializeV6Middleware(mw: any): string[] {
   }, []);
 }
 
-export async function serializeV6Handler(handler: any): Promise<any> {
+export async function serializeV6Handler(
+  handler: V6HandlerLike
+): Promise<
+  | { type: "controller"; moduleNameOrPath: string; method: string }
+  | { type: "closure"; name: string }
+> {
   /**
    * Value is a controller reference
    */
@@ -34,9 +49,9 @@ export async function serializeV6Handler(handler: any): Promise<any> {
 }
 
 export async function parseBindingReference(
-  binding: string | [any | any, any]
+  binding: string | BindingTuple
 ): Promise<{ moduleNameOrPath: string; method: string }> {
-  const parseImports = (await import("parse-imports")).default;
+  const { parseImports } = await import("parse-imports");
   /**
    * The binding reference is a magic string. It might not have method
    * name attached to it. Therefore we split the string and attempt
@@ -71,7 +86,10 @@ export async function parseBindingReference(
    * Otherwise using the name of the binding reference.
    */
   return {
-    moduleNameOrPath: bindingReference.name,
+    moduleNameOrPath:
+      typeof bindingReference === "function"
+        ? bindingReference.name
+        : bindingReference,
     method: method || "handle",
   };
 }
