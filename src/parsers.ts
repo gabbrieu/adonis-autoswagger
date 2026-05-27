@@ -1,7 +1,7 @@
 import lodash from "lodash";
 import ExampleGenerator from "./example.js";
 import { getBetweenBrackets, isJSONString } from "./helpers.js";
-import type { options } from "./types.js";
+import type { AutoSwaggerOptions } from "./types.js";
 import type { AutoSwaggerVineValidator } from "./decorators.js";
 import { standardTypes } from "./types.js";
 
@@ -62,8 +62,8 @@ function parseLiteralUnionType(type: string): any[] | null {
 }
 
 export class RouteParser {
-  options: options;
-  constructor(options: options) {
+  options: AutoSwaggerOptions;
+  constructor(options: AutoSwaggerOptions) {
     this.options = options;
   }
 
@@ -654,10 +654,147 @@ export class InterfaceParser {
     return { properties: {}, required: [] };
   }
 
+  private braceBalance(value: string): number {
+    return (value.match(/{/g) || []).length - (value.match(/}/g) || []).length;
+  }
+
+  private trimType(type: string): string {
+    return type.replace(/[;\r\n]+$/g, "").trim();
+  }
+
+  private splitPropertyLine(line: string): { prop: string; type: string } | null {
+    const separator = line.indexOf(":");
+    if (separator === -1) return null;
+
+    const prop = line.slice(0, separator).trim();
+    const type = this.trimType(line.slice(separator + 1));
+
+    if (!prop || !type) return null;
+
+    return { prop, type };
+  }
+
+  private parseInterfaceName(line: string): string | null {
+    const match = line.match(
+      /^(?:export\s+default\s+|export\s+)?interface\s+([A-Za-z_$][\w$]*)/
+    );
+
+    return match?.[1] ?? null;
+  }
+
+  private splitTopLevelProperties(body: string): string[] {
+    const properties: string[] = [];
+    let current = "";
+    let depth = 0;
+    let quote: string | null = null;
+
+    for (const char of body) {
+      if (quote) {
+        current += char;
+        if (char === quote) {
+          quote = null;
+        }
+        continue;
+      }
+
+      if (char === "'" || char === '"' || char === "`") {
+        quote = char;
+        current += char;
+        continue;
+      }
+
+      if (char === "{") depth++;
+      if (char === "}") depth--;
+
+      if ((char === ";" || char === "," || char === "\n") && depth === 0) {
+        const property = current.trim();
+        if (property) properties.push(property);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    const property = current.trim();
+    if (property) properties.push(property);
+
+    return properties;
+  }
+
+  private addInterfaceProperty(def, line: string, isRequired: boolean) {
+    const parsed = this.splitPropertyLine(line);
+    if (!parsed) return;
+
+    const cleanProp = parsed.prop.replace("?", "");
+    def.properties[cleanProp] = parsed.type;
+
+    if (isRequired || !parsed.prop.includes("?")) {
+      def.required.push(cleanProp);
+    }
+  }
+
+  private objectExampleFromProperties(properties: Record<string, any>) {
+    const example: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (value?.type === "object" && value.properties) {
+        example[key] = this.objectExampleFromProperties(value.properties);
+      } else if (value?.type === "array") {
+        example[key] = [];
+      } else if ("example" in value) {
+        example[key] = value.example;
+      } else {
+        example[key] = this.exampleGenerator.exampleByField(key);
+      }
+    }
+
+    return example;
+  }
+
+  private parseInlineObjectType(type: string) {
+    const cleanType = this.trimType(type);
+    if (!cleanType.startsWith("{") || !cleanType.endsWith("}")) return null;
+
+    const body = cleanType.slice(1, -1).trim();
+    const properties: Record<string, any> = {};
+    const required: string[] = [];
+
+    for (const property of this.splitTopLevelProperties(body)) {
+      const parsed = this.splitPropertyLine(property);
+      if (!parsed) continue;
+
+      const cleanProp = parsed.prop.replace("?", "");
+      properties[cleanProp] = this.parseType(parsed.type, cleanProp);
+
+      if (!parsed.prop.includes("?")) {
+        required.push(cleanProp);
+      }
+    }
+
+    const schema: Record<string, any> = {
+      type: "object",
+      properties,
+      example: this.objectExampleFromProperties(properties),
+    };
+
+    if (required.length > 0) {
+      schema.required = required;
+    }
+
+    return schema;
+  }
+
   parseInterfaces(data) {
     data = data.replace(/\t/g, "").replace(/^(?=\n)$|^\s*|\s*$|\n\n+/gm, "");
 
     let currentInterface = null;
+    let pendingObjectProperty: {
+      interfaceName: string;
+      line: string;
+      required: boolean;
+      depth: number;
+    } | null = null;
     const interfaces: Record<string, any> = {};
     const interfaceDefinitions = new Map();
 
@@ -671,9 +808,9 @@ export class InterfaceParser {
         line.startsWith("export interface") ||
         isDefault
       ) {
-        const sp = line.split(/\s+/);
-        const idx = line.endsWith("}") ? sp.length - 1 : sp.length - 2;
-        const name = sp[idx].split(/[{\s]/)[0];
+        const name = this.parseInterfaceName(line);
+        if (!name) continue;
+
         const extendedTypes = this.parseExtends(line);
         interfaceDefinitions.set(name, {
           extends: extendedTypes,
@@ -682,6 +819,42 @@ export class InterfaceParser {
           startLine: i,
         });
         currentInterface = name;
+
+        const openingBrace = line.indexOf("{");
+        const closingBrace = line.lastIndexOf("}");
+        if (openingBrace !== -1 && closingBrace > openingBrace) {
+          const body = line.slice(openingBrace + 1, closingBrace).trim();
+          if (body) {
+            for (const property of this.splitTopLevelProperties(body)) {
+              this.addInterfaceProperty(
+                interfaceDefinitions.get(name),
+                property,
+                false
+              );
+            }
+          }
+          currentInterface = null;
+        }
+
+        continue;
+      }
+
+      if (pendingObjectProperty) {
+        pendingObjectProperty.line += "\n" + line;
+        pendingObjectProperty.depth += this.braceBalance(line);
+
+        if (pendingObjectProperty.depth <= 0) {
+          const def = interfaceDefinitions.get(pendingObjectProperty.interfaceName);
+          if (def) {
+            this.addInterfaceProperty(
+              def,
+              pendingObjectProperty.line,
+              pendingObjectProperty.required
+            );
+          }
+          pendingObjectProperty = null;
+        }
+
         continue;
       }
 
@@ -702,14 +875,20 @@ export class InterfaceParser {
           const previousLine = i > 0 ? lines[i - 1].trim() : "";
           const isRequired = previousLine.includes("@required");
 
-          const [prop, type] = line.split(":").map((s) => s.trim());
-          if (prop && type) {
-            const cleanProp = prop.replace("?", "");
-            def.properties[cleanProp] = type.replace(";", "");
-
-            if (isRequired || !prop.includes("?")) {
-              def.required.push(cleanProp);
+          const parsed = this.splitPropertyLine(line);
+          if (parsed) {
+            const depth = this.braceBalance(parsed.type);
+            if (parsed.type.startsWith("{") && depth > 0) {
+              pendingObjectProperty = {
+                interfaceName: currentInterface,
+                line,
+                required: isRequired,
+                depth,
+              };
+              continue;
             }
+
+            this.addInterfaceProperty(def, line, isRequired);
           }
         }
       }
@@ -785,7 +964,7 @@ export class InterfaceParser {
     }
 
     if (typeof type === "string") {
-      type = type.replace(/[;\r\n]/g, "").trim();
+      type = this.trimType(type);
     }
 
     let prop: any = { type: type };
@@ -794,8 +973,15 @@ export class InterfaceParser {
 
     const unionValues =
       typeof type === "string" ? parseLiteralUnionType(type) : null;
+    const inlineObject =
+      typeof type === "string" ? this.parseInlineObjectType(type) : null;
 
-    if (unionValues) {
+    if (inlineObject) {
+      prop = {
+        ...inlineObject,
+        nullable: notRequired,
+      };
+    } else if (unionValues) {
       prop = {
         ...enumSchema(unionValues),
         nullable: notRequired,

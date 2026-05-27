@@ -3,10 +3,10 @@ Adonis AutoSwagger <br />
 <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Swagger-logo.png" height="50" />
 </h1>
 
-[![Version](https://img.shields.io/github/tag/ad-on-is/adonis-autoswagger.svg?style=flat?branch=main)]()
-[![GitHub stars](https://img.shields.io/github/stars/ad-on-is/adonis-autoswagger.svg?style=social&label=Star)]()
-[![GitHub watchers](https://img.shields.io/github/watchers/ad-on-is/adonis-autoswagger.svg?style=social&label=Watch)]()
-[![GitHub forks](https://img.shields.io/github/forks/ad-on-is/adonis-autoswagger.svg?style=social&label=Fork)]()
+[![Version](https://img.shields.io/github/tag/gabbrieu/adonis-autoswagger.svg?style=flat?branch=main)]()
+[![GitHub stars](https://img.shields.io/github/stars/gabbrieu/adonis-autoswagger.svg?style=social&label=Star)]()
+[![GitHub watchers](https://img.shields.io/github/watchers/gabbrieu/adonis-autoswagger.svg?style=social&label=Watch)]()
+[![GitHub forks](https://img.shields.io/github/forks/gabbrieu/adonis-autoswagger.svg?style=social&label=Fork)]()
 
 ### Auto-Generate swagger docs for AdonisJS
 
@@ -76,7 +76,7 @@ In your `routes.ts`
 ## 6️⃣ for AdonisJS v6
 
 ```js
-import AutoSwagger from "adonis-autoswagger";
+import AutoSwagger from "@gabbrieu/adonis-autoswagger";
 import swagger from "#config/swagger";
 // returns swagger in YAML
 router.get("/swagger", async () => {
@@ -94,7 +94,7 @@ router.get("/docs", async () => {
 ## 5️⃣ for AdonisJS v5
 
 ```js
-import AutoSwagger from "adonis-autoswagger";
+import AutoSwagger from "@gabbrieu/adonis-autoswagger";
 import swagger from "Config/swagger";
 // returns swagger in YAML
 Route.get("/swagger", async () => {
@@ -230,7 +230,7 @@ Here's where you can set these and use them with `paramUse` and `responseHeaderU
 Import the method decorator and place it directly above the controller method.
 
 ```ts
-import { AutoSwagger } from 'adonis-autoswagger'
+import { AutoSwagger } from "@gabbrieu/adonis-autoswagger";
 ```
 
 **summary**
@@ -375,43 +375,47 @@ export default {
 `app/Controllers/Http/SomeController.ts`
 
 ```ts
-import { AutoSwagger } from 'adonis-autoswagger'
-import { createProductValidator, updateProductValidator } from '#validators/product'
+import { AutoSwagger } from "@gabbrieu/adonis-autoswagger";
+import {
+  createProductValidator,
+  updateProductValidator,
+} from "#validators/product";
 
 export default class SomeController {
   @AutoSwagger({
-    operationId: 'getProducts',
+    operationId: "getProducts",
     description: "Returns array of products and its relations",
     responseBody: {
-      200: '<Product[]>.with(relations)',
+      200: "<Product[]>.with(relations)",
     },
-    paramUse: ['sortable', 'filterable'],
+    paramUse: ["sortable", "filterable"],
     responseHeaderUse: {
-      200: ['paginated'],
+      200: ["paginated"],
     },
   })
   public async index({ request, response }: HttpContextContract) {}
 
   @AutoSwagger({
-    description: 'Returns a product with its relation on user and user relations',
+    description:
+      "Returns a product with its relation on user and user relations",
     paramPath: {
       id: {
-        description: 'Describe the path param',
-        type: 'string',
+        description: "Describe the path param",
+        type: "string",
         required: true,
       },
     },
     paramQuery: {
       foo: {
-        description: 'Describe the query param',
-        type: 'string',
+        description: "Describe the query param",
+        type: "string",
         required: true,
       },
     },
     responseBody: {
-      200: '<Product>.with(user, user.relations)',
+      200: "<Product>.with(user, user.relations)",
       404: {
-        description: 'Product could not be found',
+        description: "Product could not be found",
       },
     },
   })
@@ -420,24 +424,24 @@ export default class SomeController {
   @AutoSwagger({
     requestBody: updateProductValidator,
     responseBody: {
-      200: '<Product>',
+      200: "<Product>",
       404: {
-        description: 'Product could not be found',
+        description: "Product could not be found",
       },
     },
   })
   public async update({ request, response }: HttpContextContract) {}
 
   @AutoSwagger({
-    summary: 'Lorem ipsum dolor sit amet',
+    summary: "Lorem ipsum dolor sit amet",
     paramPath: {
       provider: {
-        description: 'The login provider to be used',
-        enum: ['google', 'facebook', 'apple'],
+        description: "The login provider to be used",
+        enum: ["google", "facebook", "apple"],
       },
     },
     responseBody: {
-      200: { token: 'string' },
+      200: { token: "string" },
     },
     requestBody: createProductValidator,
   })
@@ -553,10 +557,9 @@ public age: number
 To make it work in production environments, additional steps are required
 
 - Create a new command for `docs:generate` [See official documentation](https://docs.adonisjs.com/guides/ace/creating-commands)
-
   - This should create a new file in `commands/DocsGenerate.ts`
 
-- Use the provided [`DocsGenerate.ts.examle`](https://github.com/ad-on-is/adonis-autoswagger/blob/main/DocsGenerate.ts.example)/[`DocsGeneratev6.ts.example`](https://github.com/ad-on-is/adonis-autoswagger/blob/main/DocsGeneratev6.ts.example) and put its contents into your newly created `DocsGenerate.ts`
+- Use the provided [`DocsGenerate.ts.examle`](https://github.com/gabbrieu/adonis-autoswagger/blob/main/DocsGenerate.ts.example)/[`DocsGeneratev6.ts.example`](https://github.com/gabbrieu/adonis-autoswagger/blob/main/DocsGeneratev6.ts.example) and put its contents into your newly created `DocsGenerate.ts`
 
 - Modify `/start/env.ts` as follows
 
@@ -592,8 +595,3 @@ node ace docs:generate
 node ace build --production
 cp swagger.yml build/
 ```
-
-## Known Issues
-
-- Interfaces with objects are not working like `interface Test {foo: {bar: string}}`
-  - Solution, just extract the object as it's own interface
