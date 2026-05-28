@@ -1,7 +1,7 @@
 /**
  * Autoswagger generator configuration.
  */
-export interface AutoSwaggerOptions {
+export interface AutoSwaggerConfigOptions {
   /**
    * API title used in the generated OpenAPI `info.title` field when `info` is not provided.
    *

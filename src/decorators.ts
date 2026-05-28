@@ -30,7 +30,12 @@ export interface AutoSwaggerSchema {
   oneOf?: AutoSwaggerSchema[];
   anyOf?: AutoSwaggerSchema[];
   allOf?: AutoSwaggerSchema[];
-  [key: string]: AutoSwaggerJsonValue | AutoSwaggerSchema | AutoSwaggerSchema[] | AutoSwaggerSchemaMap | undefined;
+  [key: string]:
+    | AutoSwaggerJsonValue
+    | AutoSwaggerSchema
+    | AutoSwaggerSchema[]
+    | AutoSwaggerSchemaMap
+    | undefined;
 }
 
 export type AutoSwaggerSchemaMap = Record<string, AutoSwaggerSchema>;
@@ -47,7 +52,9 @@ export interface AutoSwaggerVineValidationError {
 
 export interface AutoSwaggerVineValidator {
   toJSON(): unknown;
-  tryValidate(...args: any[]): Promise<[AutoSwaggerVineValidationError | null, unknown]>;
+  tryValidate(
+    ...args: any[]
+  ): Promise<[AutoSwaggerVineValidationError | null, unknown]>;
 }
 
 export type AutoSwaggerSchemaReference =
@@ -87,11 +94,14 @@ export interface AutoSwaggerResponse {
 
 export type AutoSwaggerResponseValue = AutoSwaggerBody | AutoSwaggerResponse;
 
-export type AutoSwaggerResponseMap = Record<string | number, AutoSwaggerResponseValue>;
+export type AutoSwaggerResponseMap = Record<
+  string | number,
+  AutoSwaggerResponseValue
+>;
 
 export type AutoSwaggerResponseHeaderUseMap = Record<string | number, string[]>;
 
-export interface AutoSwaggerOptions {
+export interface AutoSwaggerDecoratorOptions {
   summary?: string;
   description?: string;
   hideControllerPath?: boolean;
@@ -110,15 +120,15 @@ export interface AutoSwaggerOptions {
 
 const prototypeMetadata = new WeakMap<
   object,
-  Map<string | symbol, AutoSwaggerOptions>
+  Map<string | symbol, AutoSwaggerDecoratorOptions>
 >();
 
-const methodMetadata = new WeakMap<Function, AutoSwaggerOptions>();
+const methodMetadata = new WeakMap<Function, AutoSwaggerDecoratorOptions>();
 
 function setPrototypeMetadata(
   target: object,
   propertyKey: string | symbol,
-  options: AutoSwaggerOptions
+  options: AutoSwaggerDecoratorOptions
 ) {
   const metadata = prototypeMetadata.get(target) ?? new Map();
   metadata.set(propertyKey, options);
@@ -128,12 +138,14 @@ function setPrototypeMetadata(
 export function getAutoSwaggerOptions(
   controller: Function | undefined,
   propertyKey: string | symbol
-): AutoSwaggerOptions | undefined {
+): AutoSwaggerDecoratorOptions | undefined {
   if (!controller?.prototype) {
     return undefined;
   }
 
-  const byPrototype = prototypeMetadata.get(controller.prototype)?.get(propertyKey);
+  const byPrototype = prototypeMetadata
+    .get(controller.prototype)
+    ?.get(propertyKey);
   if (byPrototype) {
     return byPrototype;
   }
@@ -146,8 +158,12 @@ export function getAutoSwaggerOptions(
   return undefined;
 }
 
-export function AutoSwagger(options: AutoSwaggerOptions) {
-  return (...args: [object, string | symbol, PropertyDescriptor] | [Function, ClassMethodDecoratorContext]) => {
+export function AutoSwagger(options: AutoSwaggerDecoratorOptions) {
+  return (
+    ...args:
+      | [object, string | symbol, PropertyDescriptor]
+      | [Function, ClassMethodDecoratorContext]
+  ) => {
     if (args.length === 3) {
       const [target, propertyKey] = args;
       setPrototypeMetadata(target, propertyKey, options);

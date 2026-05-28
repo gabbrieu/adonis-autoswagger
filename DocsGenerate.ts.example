@@ -9,7 +9,6 @@ export default class DocsGenerate extends BaseCommand {
 
   public static settings = {
     loadApp: true,
-
     stayAlive: false,
   }
 

@@ -1,8 +1,8 @@
 import lodash from "lodash";
+import type { AutoSwaggerVineValidator } from "./decorators.js";
 import ExampleGenerator from "./example.js";
 import { getBetweenBrackets, isJSONString } from "./helpers.js";
-import type { AutoSwaggerOptions } from "./types.js";
-import type { AutoSwaggerVineValidator } from "./decorators.js";
+import type { AutoSwaggerConfigOptions } from "./types.js";
 import { standardTypes } from "./types.js";
 
 const { snakeCase, startCase } = lodash;
@@ -62,8 +62,8 @@ function parseLiteralUnionType(type: string): any[] | null {
 }
 
 export class RouteParser {
-  options: AutoSwaggerOptions;
-  constructor(options: AutoSwaggerOptions) {
+  options: AutoSwaggerConfigOptions;
+  constructor(options: AutoSwaggerConfigOptions) {
     this.options = options;
   }
 
@@ -410,7 +410,7 @@ export class ValidatorParser {
         objField = objField.replaceAll(`.0`, ".items");
       }
       if (err === "TYPE") {
-          lodash.set(obj["properties"], objField, {
+        lodash.set(obj["properties"], objField, {
           ...lodash.get(obj["properties"], objField),
           type: m["rule"],
           example: this.exampleGenerator.exampleByType(m["rule"]),
@@ -662,7 +662,9 @@ export class InterfaceParser {
     return type.replace(/[;\r\n]+$/g, "").trim();
   }
 
-  private splitPropertyLine(line: string): { prop: string; type: string } | null {
+  private splitPropertyLine(
+    line: string
+  ): { prop: string; type: string } | null {
     const separator = line.indexOf(":");
     if (separator === -1) return null;
 
@@ -844,7 +846,9 @@ export class InterfaceParser {
         pendingObjectProperty.depth += this.braceBalance(line);
 
         if (pendingObjectProperty.depth <= 0) {
-          const def = interfaceDefinitions.get(pendingObjectProperty.interfaceName);
+          const def = interfaceDefinitions.get(
+            pendingObjectProperty.interfaceName
+          );
           if (def) {
             this.addInterfaceProperty(
               def,

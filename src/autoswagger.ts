@@ -8,7 +8,7 @@ import { stringify as stringifyYaml } from "yaml";
 import { serializeV6Handler, serializeV6Middleware } from "./adonishelpers.js";
 import type {
   AutoSwaggerBody,
-  AutoSwaggerOptions as AutoSwaggerDecoratorOptions,
+  AutoSwaggerDecoratorOptions,
   AutoSwaggerHeaderMap,
   AutoSwaggerParameterMap,
   AutoSwaggerResponse,
@@ -29,7 +29,7 @@ import { scalarCustomCss } from "./scalarCustomCss.js";
 import type {
   AdonisRoute,
   AdonisRoutes,
-  AutoSwaggerOptions,
+  AutoSwaggerConfigOptions,
   V6Handler,
 } from "./types.js";
 
@@ -63,7 +63,7 @@ type DecoratorAnnotations = {
 const bodyWrapperKeys = ["body", "description", "headers"];
 
 export class AutoSwaggerGenerator {
-  private options: AutoSwaggerOptions;
+  private options: AutoSwaggerConfigOptions;
   private schemas: Record<string, any> = {};
   private exampleGenerator: ExampleGenerator;
   private modelParser: ModelParser;
@@ -73,7 +73,7 @@ export class AutoSwaggerGenerator {
   private validatorParser: ValidatorParser;
   private customPaths: Record<string, any> = {};
 
-  ui(url: string, options?: AutoSwaggerOptions) {
+  ui(url: string, options?: AutoSwaggerConfigOptions) {
     const persistAuthString = options?.persistAuthorization
       ? "persistAuthorization: true,"
       : "";
@@ -204,7 +204,7 @@ export class AutoSwaggerGenerator {
     return stringifyYaml(json);
   }
 
-  async json(routes: any, options: AutoSwaggerOptions) {
+  async json(routes: any, options: AutoSwaggerConfigOptions) {
     if (process.env.NODE_ENV === (options.productionEnv || "production")) {
       const str = await this.readFile(options.path, "json");
       return JSON.parse(str);
@@ -212,7 +212,7 @@ export class AutoSwaggerGenerator {
     return await this.generate(routes, options);
   }
 
-  async writeFile(routes: any, options: AutoSwaggerOptions) {
+  async writeFile(routes: any, options: AutoSwaggerConfigOptions) {
     const json = await this.generate(routes, options);
     const contents = this.jsonToYaml(json);
     const filePath = options.path + "swagger.yml";
@@ -232,7 +232,7 @@ export class AutoSwaggerGenerator {
     return data;
   }
 
-  async docs(routes: any, options: AutoSwaggerOptions) {
+  async docs(routes: any, options: AutoSwaggerConfigOptions) {
     if (process.env.NODE_ENV === (options.productionEnv || "production")) {
       return this.readFile(options.path);
     }
@@ -241,7 +241,7 @@ export class AutoSwaggerGenerator {
 
   private async generate(
     adonisRoutes: AdonisRoutes,
-    options: AutoSwaggerOptions
+    options: AutoSwaggerConfigOptions
   ) {
     this.options = {
       ...{
