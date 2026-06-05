@@ -13,7 +13,7 @@ Adonis AutoSwagger <br />
 ## 💻️ Install
 
 ```bash
-pnpm i adonis-autoswagger #using pnpm
+yarn add adonis-autoswagger
 ```
 
 ---
@@ -210,8 +210,8 @@ Tags endpoints automatically
 
 ### `ignore`
 
-Ignores specified paths. When used with a wildcard (\*), AutoSwagger will ignore everything matching before/after the wildcard.
-`/test/_`will ignore everything starting with`/test/`, whereas `\*/test`will ignore everything ending with`/test`.
+Ignores specified paths using glob patterns. Use `*` to match any sequence of characters and `?` to match a single character.
+`/test/*` ignores everything starting with `/test/`, `*/test` ignores everything ending with `/test`, and `/v?/users` matches paths like `/v1/users` and `/v2/users`.
 
 ### `common`
 
@@ -511,6 +511,8 @@ The below comments MUST be placed **1 line** above the property.
 **@no-swagger**
 Although, autoswagger detects `serializeAs: null` fields automatically, and does not show them. You can use @no-swagger for other fields.
 
+You can also place `@no-swagger` directly above a model, interface, enum, type, or validator export to prevent that entity from being added to `components.schemas`.
+
 **@enum(foo, bar)**
 If a field has defined values, you can add them into an enum. This is usesfull for something like a status field.
 
@@ -527,6 +529,12 @@ Use this field to provide additional properties to a field, like minLength, maxL
 Specify that the field is required
 
 ```ts
+// @no-swagger
+export default class InternalModel extends BaseModel {
+  @column()
+  public internalCode: string
+}
+
 // SomeModel.js
 @hasMany(() => ProductView)
 // @no-swagger

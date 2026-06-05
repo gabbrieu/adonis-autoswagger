@@ -14,12 +14,11 @@ export interface AutoSwaggerConfigOptions {
   /**
    * Route patterns that should not be included in the generated documentation.
    *
-   * Supports exact matches and a single wildcard at the beginning or end of the pattern.
-   * A value ending with `*` ignores routes that start with the prefix, while a value
-   * starting with `*` ignores routes that end with the suffix.
+   * Supports glob patterns. Use `*` to match any sequence of characters and `?`
+   * to match a single character.
    *
    * @example
-   * ignore: ["/swagger", "/docs", "/admin/*", "<star>/health"]
+   * ignore: ["/swagger", "/docs", "/admin/*", "✶/health", "/v?/users"]
    */
   ignore: string[];
 
