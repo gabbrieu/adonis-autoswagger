@@ -172,6 +172,8 @@ export class ModelParser {
 
       let field = s2[0];
       let type = s2[1] || "";
+      const isRequired =
+        index > 0 && lines[index - 1].includes("@required");
       type = type.trim();
       let enums: any[] = [];
       let format = "";
@@ -205,10 +207,6 @@ export class ModelParser {
             example = parseInt(m);
           }
         }
-      }
-
-      if (index > 0 && lines[index - 1].includes("@required")) {
-        required.push(field);
       }
 
       if (index > 0 && lines[index - 1].includes("@props")) {
@@ -245,6 +243,10 @@ export class ModelParser {
 
       if (this.snakeCase) {
         field = snakeCase(field);
+      }
+
+      if (isRequired) {
+        required.push(field);
       }
 
       let indicator = "type";
